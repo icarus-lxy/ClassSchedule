@@ -41,7 +41,7 @@ private fun ScheduleApp() {
     var settings by remember { mutableStateOf(Store.loadSettings(context)) }
     var screen by remember { mutableStateOf<Screen>(Screen.Main) }
 
-    when (val currentScreen) {
+    when (val currentScreen = screen) {
         Screen.Main -> ScheduleScreen(
             courses = courses,
             settings = settings,
