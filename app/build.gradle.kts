@@ -12,13 +12,27 @@ android {
         applicationId = "com.classschedule.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+    }
+
+    // 固定签名密钥随仓库提供：保证每次云端构建的 APK 签名一致，可以直接覆盖安装升级
+    signingConfigs {
+        create("fixed") {
+            storeFile = file("../keystore/classschedule.keystore")
+            storePassword = "classschedule"
+            keyAlias = "classschedule"
+            keyPassword = "classschedule"
+        }
     }
 
     buildTypes {
-        release {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("fixed")
+        }
+        getByName("release") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("fixed")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
