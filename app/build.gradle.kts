@@ -27,12 +27,14 @@ android {
         create("mine") {
             dimension = "school"
             applicationId = "com.classschedule.app"
+            versionCode = 11
+            versionName = "1.10"
         }
         create("linchuang") {
             dimension = "school"
             applicationId = "com.classschedule.linchuang"
-            versionCode = 1
-            versionName = "1.0"
+            versionCode = 2
+            versionName = "1.1"
         }
     }
 

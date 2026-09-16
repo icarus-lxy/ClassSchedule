@@ -66,11 +66,11 @@ import com.classschedule.app.data.weekdayShort
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-/** 每一节的最小行高；实际行高会按屏幕可用高度自适应拉伸，尽量把屏幕填满 */
-private val MinPeriodHeight: Dp = 52.dp
+/** 每一节的最小行高；行高会按可用高度自适应，但不低于这个值，保证课程块里的字排得下 */
+private val MinPeriodHeight: Dp = 58.dp
 
 /** 行高上限，避免在超大屏幕上拉得过于夸张 */
-private val MaxPeriodHeight: Dp = 112.dp
+private val MaxPeriodHeight: Dp = 96.dp
 
 /** 左侧节次列的宽度（窄屏下尽量留空间给 7 个星期列） */
 private val PeriodColumnWidth: Dp = 32.dp
@@ -389,13 +389,15 @@ private fun CourseBlock(
             .clickable { onClick() }
             .padding(horizontal = 4.dp, vertical = 3.dp)
     ) {
+        // 行数按占的节数给足，但都限制上限，宁可省略也不让文字被裁掉
         Column {
             Text(
                 course.name,
                 color = fg,
                 fontSize = 10.sp,
+                lineHeight = 12.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = if (span >= 2) 4 else 2,
+                maxLines = if (span >= 3) 4 else if (span == 2) 3 else 2,
                 overflow = TextOverflow.Ellipsis
             )
             if (course.location.isNotBlank()) {
@@ -403,6 +405,7 @@ private fun CourseBlock(
                     "@${course.location}",
                     color = fg.copy(alpha = 0.85f),
                     fontSize = 9.sp,
+                    lineHeight = 11.sp,
                     maxLines = if (span >= 2) 2 else 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -410,17 +413,11 @@ private fun CourseBlock(
             if (span >= 2 && course.teacher.isNotBlank()) {
                 Text(
                     course.teacher,
-                    color = fg.copy(alpha = 0.85f),
+                    color = fg.copy(alpha = 0.8f),
                     fontSize = 9.sp,
+                    lineHeight = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
-                )
-            }
-            if (span >= 2 && course.weekType != WEEK_TYPE_ALL) {
-                Text(
-                    if (course.weekType == WEEK_TYPE_ODD) "单周" else "双周",
-                    color = fg.copy(alpha = 0.7f),
-                    fontSize = 8.sp
                 )
             }
         }
