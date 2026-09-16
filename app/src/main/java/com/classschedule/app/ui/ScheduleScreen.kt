@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -66,6 +68,9 @@ import java.time.LocalDate
 /** 每一节在网格里占的高度 */
 private val PeriodHeight: Dp = 56.dp
 
+/** 左侧节次列的宽度（窄屏下尽量留空间给 7 个星期列） */
+private val PeriodColumnWidth: Dp = 32.dp
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ScheduleScreen(
@@ -89,7 +94,12 @@ fun ScheduleScreen(
     Scaffold(
         containerColor = Color(0xFFF6F7FB),
         topBar = {
-            Column(Modifier.fillMaxWidth().background(Color.White)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .statusBarsPadding()
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -99,7 +109,6 @@ fun ScheduleScreen(
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "设置", tint = Color(0xFF5A6472))
                     }
-                    Spacer(Modifier.weight(1f))
                     IconButton(onClick = {
                         scope.launch {
                             pagerState.animateScrollToPage(
@@ -109,6 +118,7 @@ fun ScheduleScreen(
                     }) {
                         Icon(Icons.Default.KeyboardArrowLeft, contentDescription = "上一周", tint = TextDark)
                     }
+                    Spacer(Modifier.weight(1f))
                     Column(
                         modifier = Modifier
                             .clickable { showWeekPicker = true }
@@ -127,6 +137,7 @@ fun ScheduleScreen(
                             color = HeaderGray
                         )
                     }
+                    Spacer(Modifier.weight(1f))
                     IconButton(onClick = {
                         scope.launch {
                             pagerState.animateScrollToPage(
@@ -136,16 +147,15 @@ fun ScheduleScreen(
                     }) {
                         Icon(Icons.Default.KeyboardArrowRight, contentDescription = "下一周", tint = TextDark)
                     }
-                    Spacer(Modifier.weight(1f))
                     Box(
                         modifier = Modifier
-                            .padding(end = 10.dp)
+                            .padding(end = 8.dp)
                             .clip(CircleShape)
                             .background(Color(0xFFE9EEFF))
                             .clickable {
                                 scope.launch { pagerState.animateScrollToPage(todayWeek - 1) }
                             }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 11.dp, vertical = 6.dp)
                     ) {
                         Text("今", color = Primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
@@ -158,6 +168,7 @@ fun ScheduleScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddCourse,
+                modifier = Modifier.navigationBarsPadding(),
                 containerColor = Primary,
                 contentColor = Color.White
             ) {
@@ -165,27 +176,15 @@ fun ScheduleScreen(
             }
         }
     ) { padding ->
-        if (courses.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "还没有课程\n点击右下角 + 添加",
-                    color = HeaderGray,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 22.sp
-                )
-            }
-        } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // 网格始终渲染：这样即使还没有课程，也能左右滑动切换周次
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
+                modifier = Modifier.fillMaxSize()
             ) { page ->
                 WeekPageContent(
                     week = page + 1,
@@ -193,6 +192,19 @@ fun ScheduleScreen(
                     settings = settings,
                     today = today,
                     onCourseClick = { detailCourse = it }
+                )
+            }
+            if (courses.isEmpty()) {
+                // 纯提示浮层，不拦截滑动
+                Text(
+                    "还没有课程\n\n点右下角 + 添加课程\n点左上角齿轮设置开学日期",
+                    color = HeaderGray,
+                    fontSize = 14.sp,
+                    lineHeight = 24.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 32.dp)
                 )
             }
         }
@@ -249,7 +261,7 @@ fun ScheduleScreen(
 @Composable
 private fun WeekdayHeaderRow(week: Int, settings: AppSettings, today: LocalDate) {
     Row(modifier = Modifier.fillMaxWidth()) {
-        Spacer(Modifier.width(36.dp))
+        Spacer(Modifier.width(PeriodColumnWidth))
         for (day in 1..7) {
             val date = LocalDate.ofEpochDay(settings.startEpochDay + (week - 1) * 7L + (day - 1))
             val isToday = date == today
@@ -293,7 +305,7 @@ private fun WeekPageContent(
         // 节次列
         Column(
             modifier = Modifier
-                .width(36.dp)
+                .width(PeriodColumnWidth)
                 .height(gridHeight)
         ) {
             for (period in 1..settings.periodsPerDay) {
@@ -336,9 +348,9 @@ private fun WeekPageContent(
                             course = course,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .absoluteOffset(y = PeriodHeight * (course.startPeriod - 1) + 2.dp)
-                                .height(PeriodHeight * (course.endPeriod - course.startPeriod + 1) - 4.dp)
-                                .padding(horizontal = 2.dp),
+                                .absoluteOffset(y = PeriodHeight * (course.startPeriod - 1) + 1.dp)
+                                .height(PeriodHeight * (course.endPeriod - course.startPeriod + 1) - 3.dp)
+                                .padding(horizontal = 1.dp),
                             onClick = { onCourseClick(course) }
                         )
                     }
@@ -359,16 +371,16 @@ private fun CourseBlock(
     val span = course.endPeriod - course.startPeriod + 1
     Box(
         modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(7.dp))
             .background(bg)
             .clickable { onClick() }
-            .padding(horizontal = 5.dp, vertical = 4.dp)
+            .padding(horizontal = 4.dp, vertical = 3.dp)
     ) {
         Column {
             Text(
                 course.name,
                 color = fg,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = if (span >= 2) 4 else 2,
                 overflow = TextOverflow.Ellipsis
