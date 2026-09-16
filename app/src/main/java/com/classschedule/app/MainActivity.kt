@@ -88,6 +88,11 @@ private fun ScheduleApp() {
                 Store.clearCourses(context)
                 courses = emptyList()
             },
+            onRestoreSeed = {
+                courses = Store.restoreSeed(context)
+                settings = Store.loadSettings(context)
+                screen = Screen.Main
+            },
             onBack = { screen = Screen.Main }
         )
     }

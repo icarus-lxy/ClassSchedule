@@ -125,6 +125,15 @@ object Store {
         p.edit().putBoolean(KEY_SEEDED, true).apply()
     }
 
+    /** 手动把课表重置为内置数据（连同学期设置），返回重置后的课程列表 */
+    fun restoreSeed(context: Context): MutableList<Course> {
+        val courses = SeedData.courses().toMutableList()
+        saveCourses(context, courses)
+        saveSettings(context, SeedData.settings())
+        prefs(context).edit().putBoolean(KEY_SEEDED, true).apply()
+        return courses
+    }
+
     private fun parseMinutes(raw: String): List<Int> =
         raw.split(",")
             .mapNotNull { it.trim().toIntOrNull() }

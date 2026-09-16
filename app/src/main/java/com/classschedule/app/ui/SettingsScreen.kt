@@ -48,6 +48,7 @@ fun SettingsScreen(
     courseCount: Int,
     onSave: (AppSettings) -> Unit,
     onClearCourses: () -> Unit,
+    onRestoreSeed: () -> Unit,
     onBack: () -> Unit
 ) {
     var startEpochDay by remember { mutableStateOf(settings.startEpochDay) }
@@ -61,6 +62,7 @@ fun SettingsScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var showClear by remember { mutableStateOf(false) }
+    var showRestore by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onBack)
 
@@ -150,9 +152,12 @@ fun SettingsScreen(
             )
 
             SectionLabel("数据")
+            SettingRow("恢复内置课表", "重置为内置数据") { showRestore = true }
+            Spacer(Modifier.height(10.dp))
             SettingRow("清空所有课程", "当前 $courseCount 门") { showClear = true }
             Text(
-                "课程数据仅保存在手机本地（无任何网络权限），卸载应用或清除数据会一并删除。",
+                "「恢复内置课表」会用 App 内置的课表覆盖当前课程，并重置学期设置（开学日期、每天节数、每节开始时间），当前的手动修改会丢失。\n" +
+                    "课表数据仅保存在手机本地（无任何网络权限），卸载应用或清除数据会一并删除。",
                 fontSize = 12.sp,
                 color = HeaderGray,
                 modifier = Modifier.padding(top = 8.dp)
@@ -208,6 +213,27 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showTimePicker = false }) { Text("取消", color = HeaderGray) }
+            }
+        )
+    }
+
+    if (showRestore) {
+        AlertDialog(
+            onDismissRequest = { showRestore = false },
+            title = { Text("恢复内置课表") },
+            text = {
+                Text(
+                    "将用内置课表覆盖当前 $courseCount 门课程，并重置学期设置（开学日期、每天节数、每节开始时间）。当前的手动修改会丢失，且无法撤销。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestore = false
+                    onRestoreSeed()
+                }) { Text("恢复", color = DangerRed, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestore = false }) { Text("取消", color = HeaderGray) }
             }
         )
     }
