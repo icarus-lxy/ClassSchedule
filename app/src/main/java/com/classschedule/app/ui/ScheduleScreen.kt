@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -65,8 +66,11 @@ import com.classschedule.app.data.weekdayShort
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-/** 每一节在网格里占的高度 */
-private val PeriodHeight: Dp = 56.dp
+/** 每一节的最小行高；实际行高会按屏幕可用高度自适应拉伸，尽量把屏幕填满 */
+private val MinPeriodHeight: Dp = 52.dp
+
+/** 行高上限，避免在超大屏幕上拉得过于夸张 */
+private val MaxPeriodHeight: Dp = 112.dp
 
 /** 左侧节次列的宽度（窄屏下尽量留空间给 7 个星期列） */
 private val PeriodColumnWidth: Dp = 32.dp
@@ -181,18 +185,26 @@ fun ScheduleScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 网格始终渲染：这样即使还没有课程，也能左右滑动切换周次
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                WeekPageContent(
-                    week = page + 1,
-                    courses = courses,
-                    settings = settings,
-                    today = today,
-                    onCourseClick = { detailCourse = it }
+            // 网格始终渲染：这样即使还没有课程，也能左右滑动切换周次。
+            // 用 BoxWithConstraints 拿到可用高度，把行高拉伸到刚好填满屏幕。
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val periodHeight = maxOf(
+                    MinPeriodHeight,
+                    minOf(MaxPeriodHeight, maxHeight / settings.periodsPerDay)
                 )
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize()
+                ) { page ->
+                    WeekPageContent(
+                        week = page + 1,
+                        courses = courses,
+                        settings = settings,
+                        today = today,
+                        periodHeight = periodHeight,
+                        onCourseClick = { detailCourse = it }
+                    )
+                }
             }
             if (courses.isEmpty()) {
                 // 纯提示浮层，不拦截滑动
@@ -294,9 +306,10 @@ private fun WeekPageContent(
     courses: List<Course>,
     settings: AppSettings,
     today: LocalDate,
+    periodHeight: Dp,
     onCourseClick: (Course) -> Unit
 ) {
-    val gridHeight = PeriodHeight * settings.periodsPerDay
+    val gridHeight = periodHeight * settings.periodsPerDay
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -310,7 +323,7 @@ private fun WeekPageContent(
         ) {
             for (period in 1..settings.periodsPerDay) {
                 Column(
-                    modifier = Modifier.height(PeriodHeight),
+                    modifier = Modifier.height(periodHeight),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -348,8 +361,8 @@ private fun WeekPageContent(
                             course = course,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .absoluteOffset(y = PeriodHeight * (course.startPeriod - 1) + 1.dp)
-                                .height(PeriodHeight * (course.endPeriod - course.startPeriod + 1) - 3.dp)
+                                .absoluteOffset(y = periodHeight * (course.startPeriod - 1) + 1.dp)
+                                .height(periodHeight * (course.endPeriod - course.startPeriod + 1) - 3.dp)
                                 .padding(horizontal = 1.dp),
                             onClick = { onCourseClick(course) }
                         )
