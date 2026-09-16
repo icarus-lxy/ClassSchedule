@@ -18,6 +18,7 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -56,6 +57,7 @@ fun SettingsScreen(
     var firstMinute by remember { mutableStateOf(settings.firstStartMinute % 60) }
     var periodMinutes by remember { mutableStateOf(settings.periodMinutes) }
     var breakMinutes by remember { mutableStateOf(settings.breakMinutes) }
+    var customTimesText by remember { mutableStateOf(formatTimes(settings.customStartMinutes)) }
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     var showClear by remember { mutableStateOf(false) }
@@ -68,7 +70,8 @@ fun SettingsScreen(
         periodsPerDay = periodsPerDay,
         firstStartMinute = firstHour * 60 + firstMinute,
         periodMinutes = periodMinutes,
-        breakMinutes = breakMinutes
+        breakMinutes = breakMinutes,
+        customStartMinutes = parseTimes(customTimesText)
     )
 
     Column(
@@ -121,11 +124,26 @@ fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
             NumberStepper("课间时长（分钟）", breakMinutes, 5, 30, step = 5) { breakMinutes = it }
             Text(
-                "按「第一节课开始 + 课长 + 课间」自动推算每节时间。示例：第1节 ${
+                "以上三项只在下面没有自定义时间时生效。",
+                fontSize = 12.sp,
+                color = HeaderGray,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+
+            SectionLabel("每节开始时间")
+            OutlinedTextField(
+                value = customTimesText,
+                onValueChange = { customTimesText = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("8:00,8:55,10:00,10:55,14:00,...") },
+                maxLines = 4
+            )
+            Text(
+                "用逗号分隔，按第 1、2、3…节依次填。示例：第1节 ${
                     timeLabel(buildSettings().periodStartMinute(1))
                 } - ${timeLabel(buildSettings().periodEndMinute(1))}，第2节 ${
                     timeLabel(buildSettings().periodStartMinute(2))
-                } - ${timeLabel(buildSettings().periodEndMinute(2))}",
+                } - ${timeLabel(buildSettings().periodEndMinute(2))}。留空则按上面的参数推算。",
                 fontSize = 12.sp,
                 color = HeaderGray,
                 modifier = Modifier.padding(top = 8.dp)
@@ -215,4 +233,23 @@ fun SettingsScreen(
 private fun formatDate(epochDay: Long): String {
     val d = LocalDate.ofEpochDay(epochDay)
     return "${d.year}年${d.monthValue}月${d.dayOfMonth}日"
+}
+
+/** 把每节开始时间拼成 "8:00,8:55,..." 供编辑 */
+private fun formatTimes(minutes: List<Int>): String =
+    minutes.joinToString(",") { timeLabel(it) }
+
+/** 解析用户输入的每节开始时间，无法识别的片段直接忽略，绝不抛异常 */
+private fun parseTimes(text: String): List<Int> {
+    val result = mutableListOf<Int>()
+    for (part in text.split(",", "，", " ", "\n", "\t")) {
+        val bits = part.trim().split(":")
+        if (bits.size != 2) continue
+        val hour = bits[0].trim().toIntOrNull()
+        val minute = bits[1].trim().toIntOrNull()
+        if (hour != null && minute != null && hour in 0..23 && minute in 0..59) {
+            result.add(hour * 60 + minute)
+        }
+    }
+    return result
 }

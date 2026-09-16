@@ -13,6 +13,7 @@ object Store {
     private const val PREFS_NAME = "class_schedule_store"
     private const val KEY_COURSES = "courses_json"
     private const val KEY_SETTINGS = "settings_json"
+    private const val KEY_SEEDED = "seeded_v1"
 
     fun loadCourses(context: Context): MutableList<Course> {
         val raw = prefs(context).getString(KEY_COURSES, null) ?: return mutableListOf()
@@ -93,7 +94,8 @@ object Store {
                 periodsPerDay = o.getInt("periodsPerDay"),
                 firstStartMinute = o.getInt("firstStartMinute"),
                 periodMinutes = o.getInt("periodMinutes"),
-                breakMinutes = o.getInt("breakMinutes")
+                breakMinutes = o.getInt("breakMinutes"),
+                customStartMinutes = parseMinutes(o.optString("customStartMinutes", ""))
             )
         } catch (_: Exception) {
             defaultSettings()
@@ -108,8 +110,25 @@ object Store {
         o.put("firstStartMinute", settings.firstStartMinute)
         o.put("periodMinutes", settings.periodMinutes)
         o.put("breakMinutes", settings.breakMinutes)
+        o.put("customStartMinutes", settings.customStartMinutes.joinToString(","))
         prefs(context).edit().putString(KEY_SETTINGS, o.toString()).apply()
     }
+
+    /** 首次启动且课表为空时写入内置课表，只执行一次；已有数据时不动 */
+    fun ensureSeeded(context: Context) {
+        val p = prefs(context)
+        if (p.getBoolean(KEY_SEEDED, false)) return
+        if (loadCourses(context).isEmpty()) {
+            saveCourses(context, SeedData.courses())
+            saveSettings(context, SeedData.settings())
+        }
+        p.edit().putBoolean(KEY_SEEDED, true).apply()
+    }
+
+    private fun parseMinutes(raw: String): List<Int> =
+        raw.split(",")
+            .mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in 0..1439 }
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

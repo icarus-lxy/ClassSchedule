@@ -28,10 +28,17 @@ data class AppSettings(
     val periodsPerDay: Int,     // 每天节数
     val firstStartMinute: Int,  // 第一节课开始时间（分钟数，8:00 = 480）
     val periodMinutes: Int,     // 每节课时长（分钟）
-    val breakMinutes: Int       // 课间时长（分钟）
+    val breakMinutes: Int,      // 课间时长（分钟）
+    // 自定义每节开始时间（分钟，从第 1 节开始）；为空则按上面三个参数推算。
+    // 真实作息上午/下午/晚上之间有大间隔，固定步长推不出来，所以单独存一份。
+    val customStartMinutes: List<Int> = emptyList()
 ) {
-    fun periodStartMinute(period: Int): Int =
-        firstStartMinute + (period - 1) * (periodMinutes + breakMinutes)
+    fun periodStartMinute(period: Int): Int {
+        if (period >= 1 && period <= customStartMinutes.size) {
+            return customStartMinutes[period - 1]
+        }
+        return firstStartMinute + (period - 1) * (periodMinutes + breakMinutes)
+    }
 
     fun periodEndMinute(period: Int): Int = periodStartMinute(period) + periodMinutes
 }

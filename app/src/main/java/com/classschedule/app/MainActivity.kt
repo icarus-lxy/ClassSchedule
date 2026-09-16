@@ -27,6 +27,8 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
+        // 首次安装启动时载入内置课表（课表非空则不动）
+        Store.ensureSeeded(this)
         setContent {
             ClassScheduleTheme {
                 ScheduleApp()
