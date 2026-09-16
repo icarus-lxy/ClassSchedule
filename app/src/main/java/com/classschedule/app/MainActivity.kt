@@ -16,6 +16,7 @@ import com.classschedule.app.data.Course
 import com.classschedule.app.data.Store
 import com.classschedule.app.ui.ClassScheduleTheme
 import com.classschedule.app.ui.CourseEditScreen
+import com.classschedule.app.ui.ImportScreen
 import com.classschedule.app.ui.ScheduleScreen
 import com.classschedule.app.ui.SettingsScreen
 
@@ -42,6 +43,7 @@ private sealed interface Screen {
     data object Main : Screen
     data class EditCourse(val courseId: Long?) : Screen
     data object Settings : Screen
+    data object Import : Screen
 }
 
 @Composable
@@ -91,6 +93,20 @@ private fun ScheduleApp() {
             onRestoreSeed = {
                 courses = Store.restoreSeed(context)
                 settings = Store.loadSettings(context)
+                screen = Screen.Main
+            },
+            onOpenImport = { screen = Screen.Import },
+            onBack = { screen = Screen.Main }
+        )
+
+        Screen.Import -> ImportScreen(
+            totalWeeks = settings.totalWeeks,
+            onImport = { imported, replaceAll ->
+                courses = if (replaceAll) {
+                    Store.replaceAllCourses(context, imported)
+                } else {
+                    Store.appendCourses(context, imported)
+                }
                 screen = Screen.Main
             },
             onBack = { screen = Screen.Main }

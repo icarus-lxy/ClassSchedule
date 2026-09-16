@@ -134,6 +134,27 @@ object Store {
         return courses
     }
 
+    /** 追加导入：给导入的课程分配新 id，避免与现有课程冲突 */
+    fun appendCourses(context: Context, imported: List<Course>): MutableList<Course> {
+        val list = loadCourses(context)
+        var next = (list.maxOfOrNull { it.id } ?: 0L) + 1L
+        for (course in imported) {
+            list.add(course.copy(id = next))
+            next++
+        }
+        saveCourses(context, list)
+        return list
+    }
+
+    /** 用导入的课程替换整份课表 */
+    fun replaceAllCourses(context: Context, imported: List<Course>): MutableList<Course> {
+        val list = imported
+            .mapIndexed { index, course -> course.copy(id = index + 1L) }
+            .toMutableList()
+        saveCourses(context, list)
+        return list
+    }
+
     private fun parseMinutes(raw: String): List<Int> =
         raw.split(",")
             .mapNotNull { it.trim().toIntOrNull() }

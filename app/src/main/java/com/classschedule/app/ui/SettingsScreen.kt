@@ -49,6 +49,7 @@ fun SettingsScreen(
     onSave: (AppSettings) -> Unit,
     onClearCourses: () -> Unit,
     onRestoreSeed: () -> Unit,
+    onOpenImport: () -> Unit,
     onBack: () -> Unit
 ) {
     var startEpochDay by remember { mutableStateOf(settings.startEpochDay) }
@@ -152,6 +153,8 @@ fun SettingsScreen(
             )
 
             SectionLabel("数据")
+            SettingRow("从图片识别课表并导入", "选图 → 核对 → 导入") { onOpenImport() }
+            Spacer(Modifier.height(10.dp))
             SettingRow("恢复内置课表", "重置为内置数据") { showRestore = true }
             Spacer(Modifier.height(10.dp))
             SettingRow("清空所有课程", "当前 $courseCount 门") { showClear = true }
