@@ -12,8 +12,8 @@ android {
         applicationId = "com.classschedule.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
     }
 
     // 固定签名密钥随仓库提供：保证每次云端构建的 APK 签名一致，可以直接覆盖安装升级

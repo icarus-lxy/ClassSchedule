@@ -3,11 +3,12 @@ package com.classschedule.app.data
 /**
  * 把 OCR 出来的文字行还原成课表。
  *
- * 思路（针对"表格线 + 一个格子可能叠放多门不同周次的课"这种教务系统导出版式）：
- *  1. 表头「星期一…星期日」的横坐标 → 7 个列边界
- *  2. 左侧「12节 / 34节 …」标签的纵坐标 → 每一行覆盖的节次
+ * 版式差异很大，所以尽量按"能拿到什么就用什么"来推断：
+ *  1. 表头「星期几」的横坐标 → 列边界（**允许缺列**，比如只有周一到周六）
+ *  2. 左侧「12节 / 34节 …」标签 → 每行覆盖的节次；
+ *     **没有标签时**改按内容的纵向间隔切分出行，再推测每行几节
  *  3. 每个文字行按坐标落进"星期 × 行"的格子
- *  4. 同一格里按纵向间距聚类 → 拆出叠放的多门课
+ *  4. 同一格里按纵向间距聚类 → 拆出叠放的多门课（虚线分隔行会自然留在两门课之间）
  *  5. 相邻行里重复出现的同一门课 → 合并成一门连堂课
  */
 object TimetableParser {
@@ -16,12 +17,17 @@ object TimetableParser {
     private val rowLabelRegex = Regex("^\\s*([0-9]{1,4})\\s*节\\s*$")
     private val weekRangeRegex = Regex("(\\d{1,2})\\s*[-~～—－]\\s*(\\d{1,2})\\s*周")
     private val singleWeekRegex = Regex("(\\d{1,2})\\s*周")
-    private val roomRegex = Regex("校区[^0-9A-Za-z]*([0-9A-Za-z\\-]{1,12})室")
+    private val roomRegex = Regex("校区\\s*[：:]?\\s*(.{1,16}?)室")
     private val hoursRegex = Regex("(\\d{1,2})\\s*学时")
     private val dashOnlyRegex = Regex("^[-—–_─=·・.。~～\\s]{2,}$")
 
-    // 与 ui 里的 CoursePalette 数量保持一致
+    /** 课程名与教师之间可能出现的分隔符 */
+    private val separators = listOf("：", ":", "；", ";")
+
+    /** 与 ui 里的 CoursePalette 数量保持一致 */
     private const val COLOR_COUNT = 8
+
+    private data class Column(val day: Int, val range: IntRange)
 
     private data class RawCourse(
         val day: Int,
@@ -37,80 +43,105 @@ object TimetableParser {
 
     data class Outcome(val courses: List<Course>, val message: String)
 
-    fun parse(lines: List<OcrLine>, totalWeeks: Int): Outcome {
+    fun parse(lines: List<OcrLine>, totalWeeks: Int, defaultPeriodsPerDay: Int): Outcome {
         val content = lines.filter { it.text.isNotBlank() }
         if (content.isEmpty()) {
             return Outcome(emptyList(), "没有识别到任何文字，换一张更清晰的图试试")
         }
 
-        // 1) 表头：找到星期一…星期日的横坐标（取最靠上的那一次出现）
-        val dayCenters = IntArray(8) { -1 }
+        // 1) 表头「星期几」：取每列最靠上的那次出现，允许缺列
+        val headerForDay = LinkedHashMap<Int, OcrLine>()
         for (line in content.sortedBy { it.top }) {
             for (match in dayRegex.findAll(line.text)) {
                 val day = dayOfWeek(match.groupValues[1])
-                if (day in 1..7 && dayCenters[day] < 0) dayCenters[day] = line.centerX
+                if (day in 1..7 && !headerForDay.containsKey(day)) headerForDay[day] = line
             }
         }
-        if ((1..7).any { dayCenters[it] < 0 }) {
-            return Outcome(emptyList(), "没找到「星期一…星期日」表头，请确认图片是完整课表")
+        if (headerForDay.size < 2) {
+            return Outcome(emptyList(), "没找到「星期几」表头（至少要有 2 列），请确认这是课表图片")
         }
+        val orderedHeaders = headerForDay.entries.sortedBy { it.value.centerX }
+        val headerCenters = orderedHeaders.map { it.value.centerX }
+        val headerBottom = orderedHeaders.maxOf { it.value.bottom }
+        val colWidth = if (headerCenters.size >= 2) {
+            ((headerCenters.last() - headerCenters.first()) / (headerCenters.size - 1)).coerceAtLeast(20)
+        } else {
+            120
+        }
+        val firstColumnLeft = headerCenters.first() - colWidth / 2
 
-        // 2) 左侧节次标签（如 12节 / 34节 / 56节）
+        // 2) 左侧节次标签（可能没有）
         val labels = content
-            .filter { rowLabelRegex.matches(it.text) && it.centerX < dayCenters[1] - 10 }
+            .filter { rowLabelRegex.matches(it.text) && it.centerX < firstColumnLeft }
             .sortedBy { it.centerY }
-        if (labels.size < 2) {
-            return Outcome(emptyList(), "没找到左侧的节次标签（如 12节 / 34节），请把识别原文发我")
-        }
-        val rowPeriods = periodsOfLabels(
-            labels.map { rowLabelRegex.find(it.text)!!.groupValues[1] }
-        ) ?: return Outcome(emptyList(), "节次标签解析失败，请把识别原文发我")
-        val periodsPerDay = rowPeriods.last().last
 
-        // 3) 每一行的上下边界：取相邻标签中点
-        val rowBounds = ArrayList<IntRange>()
-        for (i in labels.indices) {
-            val top = if (i == 0) labels[0].top - labels[0].boxHeight * 4
-            else (labels[i - 1].centerY + labels[i].centerY) / 2
-            val bottom = if (i == labels.lastIndex) content.maxOf { it.bottom }
-            else (labels[i].centerY + labels[i + 1].centerY) / 2
-            if (bottom > top) rowBounds.add(top..bottom)
-        }
-        if (rowBounds.size != labels.size) {
-            return Outcome(emptyList(), "行高计算异常，请把识别原文发我")
+        val rowPeriods: List<IntRange>
+        val rowBounds: List<IntRange>
+        var note = ""
+
+        if (labels.size >= 2) {
+            rowPeriods = periodsOfLabels(labels.map { rowLabelRegex.find(it.text)!!.groupValues[1] })
+                ?: return Outcome(emptyList(), "左侧节次标签解析失败，请把识别原文发我")
+            val bounds = ArrayList<IntRange>()
+            for (i in labels.indices) {
+                val top = if (i == 0) labels[0].top - labels[0].boxHeight * 4
+                else (labels[i - 1].centerY + labels[i].centerY) / 2
+                val bottom = if (i == labels.lastIndex) content.maxOf { it.bottom }
+                else (labels[i].centerY + labels[i + 1].centerY) / 2
+                if (bottom > top) bounds.add(top..bottom)
+            }
+            if (bounds.size != labels.size) {
+                return Outcome(emptyList(), "行高计算异常，请把识别原文发我")
+            }
+            rowBounds = bounds
+        } else {
+            // 没有节次标签：按内容的纵向间隔切行，再推测每行几节
+            val bands = splitRowsByGaps(content, firstColumnLeft, headerBottom)
+            if (bands.size < 2) {
+                return Outcome(emptyList(), "既没有节次标签，也看不出行结构，请把识别原文发我")
+            }
+            val perRow = when {
+                kotlin.math.abs(bands.size * 2 - defaultPeriodsPerDay) <=
+                    kotlin.math.abs(bands.size - defaultPeriodsPerDay) -> 2
+                else -> 1
+            }
+            rowPeriods = bands.indices.map { i -> (i * perRow + 1)..(i * perRow + perRow) }
+            rowBounds = bands
+            note = "（这张图没有节次标签，我按每行 $perRow 节推断，请重点核对节次）"
         }
 
-        // 4) 每一列的左右边界
-        val tableLeft = labels.maxOf { it.right }
+        // 3) 每一列的左右边界
+        val tableLeft = if (labels.isNotEmpty()) labels.maxOf { it.right } else firstColumnLeft
         val tableRight = content.maxOf { it.right }
-        val colBounds = ArrayList<IntRange>()
-        for (d in 1..7) {
-            val left = if (d == 1) tableLeft else (dayCenters[d - 1] + dayCenters[d]) / 2
-            val right = if (d == 7) tableRight else (dayCenters[d] + dayCenters[d + 1]) / 2
-            colBounds.add(left..right)
+        val columns = ArrayList<Column>()
+        for ((index, entry) in orderedHeaders.withIndex()) {
+            val left = if (index == 0) tableLeft else (headerCenters[index - 1] + headerCenters[index]) / 2
+            val right = if (index == orderedHeaders.lastIndex) tableRight
+            else (headerCenters[index] + headerCenters[index + 1]) / 2
+            columns.add(Column(entry.key, left..right))
         }
+
         val firstRowTop = rowBounds.first().first
         val lastRowBottom = rowBounds.last().last
 
-        // 5) 文字行落格子
+        // 4) 文字行落格子
         val cells = HashMap<String, MutableList<OcrLine>>()
         for (line in content) {
             if (rowLabelRegex.matches(line.text)) continue
             if (line.centerX <= tableLeft) continue
             if (line.centerY < firstRowTop || line.centerY > lastRowBottom) continue
-            val day = colBounds.indexOfFirst { line.centerX in it }
-            if (day < 0) continue
+            val column = columns.firstOrNull { line.centerX in it.range } ?: continue
             val row = rowBounds.indexOfFirst { line.centerY in it }
             if (row < 0) continue
-            cells.getOrPut("$day|$row") { mutableListOf() }.add(line)
+            cells.getOrPut("$row|${column.day}") { mutableListOf() }.add(line)
         }
 
-        // 6) 同一格内按纵向间距聚类成一门课
+        // 5) 同一格内按纵向间距聚类成一门课
         val raw = mutableListOf<RawCourse>()
         for ((key, group) in cells) {
             val parts = key.split("|")
-            val day = parts[0].toInt() + 1
-            val row = parts[1].toInt()
+            val row = parts[0].toInt()
+            val day = parts[1].toInt()
             val sorted = group.sortedBy { it.centerY }
             var bucket = mutableListOf<OcrLine>()
             var lastBottom = Int.MIN_VALUE
@@ -139,7 +170,7 @@ object TimetableParser {
             flush()
         }
 
-        // 7) 相邻行里重复出现的同一门课合并成连堂课
+        // 6) 相邻行里重复出现的同一门课合并成连堂课
         val merged = mutableListOf<RawCourse>()
         for (course in raw.sortedWith(compareBy({ it.day }, { it.periods.first }, { it.name }))) {
             val last = merged.lastOrNull()
@@ -157,7 +188,8 @@ object TimetableParser {
             }
         }
 
-        // 8) 转成课程数据；标注了"连堂N学时"时按学时补足跨节数
+        // 7) 转成课程数据；标注了"连堂N学时"时按学时补足跨节数
+        val periodsPerDay = rowPeriods.last().last
         val courses = merged.mapIndexed { index, rc ->
             val span = rc.periods.last - rc.periods.first + 1
             val end = if (rc.hours > span) rc.periods.first + rc.hours - 1 else rc.periods.last
@@ -179,9 +211,45 @@ object TimetableParser {
         val message = if (courses.isEmpty()) {
             "识别到文字，但没能解析出课程。请把下面的识别原文发我，我按实际识别结果调规则"
         } else {
-            "识别到 ${courses.size} 门课，请逐条核对后再导入"
+            "识别到 ${courses.size} 门课$note，请逐条核对后再导入"
         }
         return Outcome(courses, message)
+    }
+
+    /**
+     * 没有节次标签时，按内容的纵向间隔切分出行。
+     * 虚线分隔行（格子内叠放多门课的分隔）保留在流里，避免把同一行的两门课切成两行。
+     */
+    private fun splitRowsByGaps(
+        content: List<OcrLine>,
+        firstColumnLeft: Int,
+        headerBottom: Int
+    ): List<IntRange> {
+        val body = content
+            .filter { it.centerX > firstColumnLeft && it.centerY > headerBottom }
+            .sortedBy { it.top }
+        if (body.isEmpty()) return emptyList()
+
+        val heights = body.map { it.boxHeight }.sorted()
+        val median = heights[heights.size / 2].coerceAtLeast(6)
+        val gapThreshold = median * 5 / 2
+
+        val bands = mutableListOf<IntRange>()
+        var top = body.first().top
+        var bottom = body.first().bottom
+        for (i in 1 until body.size) {
+            val line = body[i]
+            if (line.top - bottom > gapThreshold) {
+                bands.add(top..bottom)
+                top = line.top
+                bottom = line.bottom
+            } else {
+                if (line.top < top) top = line.top
+                if (line.bottom > bottom) bottom = line.bottom
+            }
+        }
+        bands.add(top..bottom)
+        return bands
     }
 
     /** 从一格里的一堆文字行拼出一门课 */
@@ -192,11 +260,14 @@ object TimetableParser {
         totalWeeks: Int
     ): RawCourse? {
         val blob = group.joinToString("") { it.text }
-        val name = extractName(blob) ?: return null
-        val teacher = extractTeacher(blob)
+        val head = splitHead(blob)
+        val name = cleanName(head.first) ?: return null
+        val teacher = head.second
+            .removeSuffix("雅安").removeSuffix("成都").removeSuffix("都江堰")
+            .trim()
 
         val roomMatch = roomRegex.find(blob)
-        val room = if (roomMatch != null) roomMatch.groupValues[1] + "室" else ""
+        val room = if (roomMatch != null) roomMatch.groupValues[1].trim() + "室" else ""
 
         var startWeek = 1
         var endWeek = totalWeeks
@@ -223,9 +294,22 @@ object TimetableParser {
         return RawCourse(day, periods, name, teacher, room, startWeek, endWeek, weekType, hours)
     }
 
-    private fun extractName(blob: String): String? {
+    /** 切出「课程名 / 教师」两部分。分隔符可能是冒号，也可能是分号 */
+    private fun splitHead(blob: String): Pair<String, String> {
         val head = blob.substringBefore("校区", blob)
-        val raw = head.substringBefore("：").substringBefore(":").trim()
+        var index = -1
+        for (separator in separators) {
+            val at = head.indexOf(separator)
+            if (at >= 0 && (index < 0 || at < index)) index = at
+        }
+        return if (index < 0) {
+            head.trim() to ""
+        } else {
+            head.substring(0, index).trim() to head.substring(index + 1).trim()
+        }
+    }
+
+    private fun cleanName(raw: String): String? {
         val name = raw.replace("《", "").replace("》", "")
             .removeSuffix("(实验)").removeSuffix("（实验）")
             .trim()
@@ -234,17 +318,9 @@ object TimetableParser {
         return name
     }
 
-    private fun extractTeacher(blob: String): String {
-        val head = blob.substringBefore("校区", blob)
-        val after = head.substringAfter("：", "").ifEmpty { head.substringAfter(":", "") }
-        return after.trim()
-            .removeSuffix("雅安").removeSuffix("成都").removeSuffix("都江堰")
-            .trim()
-    }
-
     /**
-     * 解析左侧行标签。教务系统里一行可能覆盖两节，标签写成 "12节"（第1-2节）、"910节"（第9-10节）；
-     * 也可能一行就是一节，标签写成 "1节""2节"。两种都试，用"是否构成连续节次"来判断哪种成立。
+     * 解析左侧行标签。一行覆盖两节时标签写成 "12节"（第1-2节）、"910节"（第9-10节）；
+     * 一行一节时写成 "1节""2节"。两种都试，用"是否构成连续节次"来判断哪种成立。
      */
     private fun periodsOfLabels(labels: List<String>): List<IntRange>? {
         val singles = labels.mapNotNull { it.toIntOrNull() }

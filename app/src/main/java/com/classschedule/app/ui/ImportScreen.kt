@@ -62,6 +62,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun ImportScreen(
     totalWeeks: Int,
+    periodsPerDay: Int,
     onImport: (List<Course>, Boolean) -> Unit,
     onBack: () -> Unit
 ) {
@@ -96,7 +97,7 @@ fun ImportScreen(
                     return@launch
                 }
                 lines = recognized
-                val outcome = TimetableParser.parse(recognized, totalWeeks)
+                val outcome = TimetableParser.parse(recognized, totalWeeks, periodsPerDay)
                 parsed = outcome.courses
                 message = outcome.message
                 hasResult = true

@@ -101,6 +101,7 @@ private fun ScheduleApp() {
 
         Screen.Import -> ImportScreen(
             totalWeeks = settings.totalWeeks,
+            periodsPerDay = settings.periodsPerDay,
             onImport = { imported, replaceAll ->
                 courses = if (replaceAll) {
                     Store.replaceAllCourses(context, imported)
