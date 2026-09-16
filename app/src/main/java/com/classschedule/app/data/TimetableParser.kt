@@ -3,13 +3,14 @@ package com.classschedule.app.data
 /**
  * 把 OCR 出来的文字行还原成课表。
  *
- * 版式差异很大，所以尽量按"能拿到什么就用什么"来推断：
- *  1. 表头「星期几」的横坐标 → 列边界（**允许缺列**，比如只有周一到周六）
- *  2. 左侧「12节 / 34节 …」标签 → 每行覆盖的节次；
- *     **没有标签时**改按内容的纵向间隔切分出行，再推测每行几节
- *  3. 每个文字行按坐标落进"星期 × 行"的格子
- *  4. 同一格里按纵向间距聚类 → 拆出叠放的多门课（虚线分隔行会自然留在两门课之间）
- *  5. 相邻行里重复出现的同一门课 → 合并成一门连堂课
+ * 版式差异很大，尽量"能拿到什么就用什么"：
+ *  1. 表头「星期几」→ 列边界。允许缺列（只有周一到周六也行），
+ *     缺的列按已找到表头的列宽外推补上。
+ *  2. 行结构：标签齐全连续时直接用标签位置切行（最准）；
+ *     标签缺失/认不出时，改按内容的纵向间隔切行，再用认到的标签给行命名，
+ *     剩下的行按"每行几节"续推。
+ *  3. 同一格里按纵向间距聚类 → 拆出叠放的多门课（虚线分隔行会自然留在两门课之间）。
+ *  4. 相邻行里重复出现的同一门课 → 合并成一门连堂课。
  */
 object TimetableParser {
 
@@ -58,19 +59,27 @@ object TimetableParser {
             }
         }
         if (headerForDay.size < 2) {
-            return Outcome(emptyList(), "没找到「星期几」表头（至少要有 2 列），请确认这是课表图片")
+            val sample = content.take(8).joinToString(" / ") { it.text }
+            return Outcome(emptyList(), "没找到「星期几」表头（至少要有 2 列）。识别到的开头几行：$sample")
         }
-        val orderedHeaders = headerForDay.entries.sortedBy { it.value.centerX }
-        val headerCenters = orderedHeaders.map { it.value.centerX }
-        val headerBottom = orderedHeaders.maxOf { it.value.bottom }
-        val colWidth = if (headerCenters.size >= 2) {
-            ((headerCenters.last() - headerCenters.first()) / (headerCenters.size - 1)).coerceAtLeast(20)
-        } else {
-            120
-        }
-        val firstColumnLeft = headerCenters.first() - colWidth / 2
 
-        // 2) 左侧节次标签（可能没有）
+        val ordered = headerForDay.entries.sortedBy { it.value.centerX }
+        val anchorDay = ordered.first().key
+        val anchorX = ordered.first().value.centerX
+        var colWidth = 120
+        if (ordered.size >= 2) {
+            val last = ordered.last()
+            val daySpan = (last.key - anchorDay).coerceAtLeast(1)
+            colWidth = ((last.value.centerX - anchorX) / daySpan).coerceAtLeast(20)
+        }
+        // 用锚点 + 列宽把 7 天的列中心补齐（缺列也补，超出的自然成为空列）
+        val centers = HashMap<Int, Int>()
+        for (day in 1..7) centers[day] = anchorX + (day - anchorDay) * colWidth
+
+        val headerBottom = ordered.maxOf { it.value.bottom }
+
+        // 2) 左侧节次标签（可能缺失、可能认不全）
+        val firstColumnLeft = (centers[1] ?: anchorX) - colWidth / 2
         val labels = content
             .filter { rowLabelRegex.matches(it.text) && it.centerX < firstColumnLeft }
             .sortedBy { it.centerY }
@@ -79,9 +88,14 @@ object TimetableParser {
         val rowBounds: List<IntRange>
         var note = ""
 
-        if (labels.size >= 2) {
-            rowPeriods = periodsOfLabels(labels.map { rowLabelRegex.find(it.text)!!.groupValues[1] })
-                ?: return Outcome(emptyList(), "左侧节次标签解析失败，请把识别原文发我")
+        val strict = if (labels.size >= 2) {
+            periodsOfLabels(labels.map { rowLabelRegex.find(it.text)!!.groupValues[1] })
+        } else {
+            null
+        }
+
+        if (strict != null) {
+            // 标签齐全且连续：按标签位置切行，最准
             val bounds = ArrayList<IntRange>()
             for (i in labels.indices) {
                 val top = if (i == 0) labels[0].top - labels[0].boxHeight * 4
@@ -93,32 +107,63 @@ object TimetableParser {
             if (bounds.size != labels.size) {
                 return Outcome(emptyList(), "行高计算异常，请把识别原文发我")
             }
+            rowPeriods = strict
             rowBounds = bounds
         } else {
-            // 没有节次标签：按内容的纵向间隔切行，再推测每行几节
+            // 标签缺失或认不出的情况：靠内容间隔切行
             val bands = splitRowsByGaps(content, firstColumnLeft, headerBottom)
             if (bands.size < 2) {
-                return Outcome(emptyList(), "既没有节次标签，也看不出行结构，请把识别原文发我")
+                val labelTexts = if (labels.isEmpty()) "（一个都没认到）"
+                else labels.take(8).joinToString(" / ") { it.text }
+                return Outcome(
+                    emptyList(),
+                    "认不出这张表的行结构。识别到的节次标签：$labelTexts"
+                )
             }
-            val perRow = when {
-                kotlin.math.abs(bands.size * 2 - defaultPeriodsPerDay) <=
-                    kotlin.math.abs(bands.size - defaultPeriodsPerDay) -> 2
-                else -> 1
+            // 认到的标签贴到对应行上，没标签的行按"每行几节"续推
+            val known = HashMap<Int, IntRange>()
+            for (line in labels) {
+                val digits = rowLabelRegex.find(line.text)?.groupValues?.get(1) ?: continue
+                val range = rangeOfSingleLabel(digits) ?: continue
+                val index = bands.indexOfFirst { line.centerY in it }
+                if (index >= 0) known[index] = range
             }
-            rowPeriods = bands.indices.map { i -> (i * perRow + 1)..(i * perRow + perRow) }
+            val perRow = known.values
+                .map { it.last - it.first + 1 }
+                .groupingBy { it }.eachCount()
+                .maxByOrNull { it.value }?.key ?: 2
+            val built = ArrayList<IntRange>()
+            var nextStart = known[0]?.first ?: 1
+            for (i in bands.indices) {
+                val range = known[i] ?: (nextStart..(nextStart + perRow - 1))
+                built.add(range)
+                nextStart = range.last + 1
+            }
+            rowPeriods = built
             rowBounds = bands
-            note = "（这张图没有节次标签，我按每行 $perRow 节推断，请重点核对节次）"
+            val labelTexts = if (labels.isEmpty()) "一个都没认到" else labels.joinToString(" / ") { it.text }
+            note = "（节次标签不完整：$labelTexts；我按提示的行位置推断节次，请重点核对）"
         }
 
         // 3) 每一列的左右边界
         val tableLeft = if (labels.isNotEmpty()) labels.maxOf { it.right } else firstColumnLeft
         val tableRight = content.maxOf { it.right }
         val columns = ArrayList<Column>()
-        for ((index, entry) in orderedHeaders.withIndex()) {
-            val left = if (index == 0) tableLeft else (headerCenters[index - 1] + headerCenters[index]) / 2
-            val right = if (index == orderedHeaders.lastIndex) tableRight
-            else (headerCenters[index] + headerCenters[index + 1]) / 2
-            columns.add(Column(entry.key, left..right))
+        for (day in 1..7) {
+            val center = centers[day] ?: continue
+            val prev = centers[day - 1]
+            val next = centers[day + 1]
+            val left = when {
+                day == 1 -> tableLeft
+                prev != null -> (prev + center) / 2
+                else -> center - colWidth / 2
+            }
+            val right = when {
+                day == 7 -> tableRight
+                next != null -> (center + next) / 2
+                else -> center + colWidth / 2
+            }
+            if (right > left) columns.add(Column(day, left..right))
         }
 
         val firstRowTop = rowBounds.first().first
@@ -209,7 +254,7 @@ object TimetableParser {
         }.sortedWith(compareBy({ it.dayOfWeek }, { it.startPeriod }))
 
         val message = if (courses.isEmpty()) {
-            "识别到文字，但没能解析出课程。请把下面的识别原文发我，我按实际识别结果调规则"
+            "识别到文字，但没能解析出课程。请点「复制识别原文」把原文发我"
         } else {
             "识别到 ${courses.size} 门课$note，请逐条核对后再导入"
         }
@@ -217,7 +262,7 @@ object TimetableParser {
     }
 
     /**
-     * 没有节次标签时，按内容的纵向间隔切分出行。
+     * 没有可用标签时，按内容的纵向间隔切分出行。
      * 虚线分隔行（格子内叠放多门课的分隔）保留在流里，避免把同一行的两门课切成两行。
      */
     private fun splitRowsByGaps(
@@ -319,8 +364,7 @@ object TimetableParser {
     }
 
     /**
-     * 解析左侧行标签。一行覆盖两节时标签写成 "12节"（第1-2节）、"910节"（第9-10节）；
-     * 一行一节时写成 "1节""2节"。两种都试，用"是否构成连续节次"来判断哪种成立。
+     * 标签齐全时：判断它到底是"一行一节"（1节/2节/3节…）还是"一行两节"（12节=第1-2节）。
      */
     private fun periodsOfLabels(labels: List<String>): List<IntRange>? {
         val singles = labels.mapNotNull { it.toIntOrNull() }
@@ -339,6 +383,10 @@ object TimetableParser {
         }
         return null
     }
+
+    /** 单个标签 → 节次范围："12节"→1-2，"910节"→9-10，"3节"→3-3 */
+    private fun rangeOfSingleLabel(digits: String): IntRange? =
+        pairOfLabel(digits) ?: digits.toIntOrNull()?.let { it..it }
 
     private fun pairOfLabel(digits: String): IntRange? {
         return when (digits.length) {

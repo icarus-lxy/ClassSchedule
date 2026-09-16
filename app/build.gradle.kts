@@ -12,8 +12,12 @@ android {
         applicationId = "com.classschedule.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.8"
+        versionCode = 10
+        versionName = "1.9"
+        ndk {
+            // 识别引擎自带 4 种 CPU 架构的原生库，只保留手机实际在用的两种，APK 能小掉一大半
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+        }
     }
 
     // 固定签名密钥随仓库提供：保证每次云端构建的 APK 签名一致，可以直接覆盖安装升级

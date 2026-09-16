@@ -1,5 +1,8 @@
 package com.classschedule.app.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -76,6 +79,7 @@ fun ImportScreen(
     var hasResult by remember { mutableStateOf(false) }
     var showRaw by remember { mutableStateOf(false) }
     var withCoords by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
     var askReplace by remember { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -186,7 +190,12 @@ fun ImportScreen(
                     }
                     if (showRaw) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("识别原文", fontSize = 12.sp, color = HeaderGray, modifier = Modifier.weight(1f))
+                            Text(
+                                "识别原文（共 ${lines.size} 行）",
+                                fontSize = 12.sp,
+                                color = HeaderGray,
+                                modifier = Modifier.weight(1f)
+                            )
                             Text("显示坐标", fontSize = 12.sp, color = HeaderGray)
                             Spacer(Modifier.width(6.dp))
                             Switch(checked = withCoords, onCheckedChange = { withCoords = it })
@@ -194,7 +203,7 @@ fun ImportScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(170.dp)
+                                .height(220.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(Color(0xFFF6F7FB))
                                 .padding(10.dp)
@@ -204,6 +213,19 @@ fun ImportScreen(
                                 OcrEngine.rawTextOf(lines, withCoords),
                                 fontSize = 11.sp,
                                 color = Color(0xFF3A3F49)
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                copyToClipboard(context, OcrEngine.rawTextOf(lines, true))
+                                copied = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                if (copied) "已复制，直接粘贴发我即可" else "复制识别原文（含坐标）",
+                                fontSize = 13.sp
                             )
                         }
                     }
@@ -264,8 +286,7 @@ fun ImportScreen(
 }
 
 @Composable
-private fun ImportedCourseRow(course: Course, onDelete: () -> Unit) {
-    Row(
+private fun ImportedCourseRow(course: Course, onDelete: () -> Unit) {    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
@@ -287,4 +308,10 @@ private fun ImportedCourseRow(course: Course, onDelete: () -> Unit) {
         }
         TextButton(onClick = onDelete) { Text("删除", color = DangerRed, fontSize = 13.sp) }
     }
+}
+
+/** 把识别原文放到剪贴板，方便直接粘给我排查 */
+private fun copyToClipboard(context: Context, text: String) {
+    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    manager.setPrimaryClip(ClipData.newPlainText("课表识别原文", text))
 }
