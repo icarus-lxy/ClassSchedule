@@ -20,6 +20,22 @@ android {
         }
     }
 
+    // 一套代码出多个独立 App：每个班/学校一个 flavor，各自的包名、名称、内置课表
+    // （内置课表放在 app/src/<flavor>/java/.../data/SeedData.kt，资源在 app/src/<flavor>/res/）
+    flavorDimensions.add("school")
+    productFlavors {
+        create("mine") {
+            dimension = "school"
+            applicationId = "com.classschedule.app"
+        }
+        create("linchuang") {
+            dimension = "school"
+            applicationId = "com.classschedule.linchuang"
+            versionCode = 1
+            versionName = "1.0"
+        }
+    }
+
     // 固定签名密钥随仓库提供：保证每次云端构建的 APK 签名一致，可以直接覆盖安装升级
     signingConfigs {
         create("fixed") {

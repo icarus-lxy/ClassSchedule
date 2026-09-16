@@ -46,11 +46,17 @@ jobs:
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platforms;android-35" "build-tools;34.0.0" "platform-tools" > /dev/null
 
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Build debug APKs
+        run: gradle assembleMineDebug assembleLinchuangDebug --no-daemon --stacktrace
 
-      - name: Upload APK artifact
+      - name: Upload 我的课表 APK
         uses: actions/upload-artifact@v4
         with:
-          name: ClassSchedule-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: apk-mine
+          path: app/build/outputs/apk/mine/debug/app-mine-debug.apk
+
+      - name: Upload 临床医学课表 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-linchuang
+          path: app/build/outputs/apk/linchuang/debug/app-linchuang-debug.apk
