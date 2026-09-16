@@ -36,6 +36,12 @@ android {
             versionCode = 2
             versionName = "1.1"
         }
+        create("tumu") {
+            dimension = "school"
+            applicationId = "com.classschedule.tumu"
+            versionCode = 1
+            versionName = "1.0"
+        }
     }
 
     // 固定签名密钥随仓库提供：保证每次云端构建的 APK 签名一致，可以直接覆盖安装升级

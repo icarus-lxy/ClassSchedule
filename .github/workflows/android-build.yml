@@ -47,7 +47,7 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;34.0.0" "platform-tools" > /dev/null
 
       - name: Build debug APKs
-        run: gradle assembleMineDebug assembleLinchuangDebug --no-daemon --stacktrace
+        run: gradle assembleMineDebug assembleLinchuangDebug assembleTumuDebug --no-daemon --stacktrace
 
       - name: Upload 我的课表 APK
         uses: actions/upload-artifact@v4
@@ -60,3 +60,9 @@ jobs:
         with:
           name: apk-linchuang
           path: app/build/outputs/apk/linchuang/debug/app-linchuang-debug.apk
+
+      - name: Upload 土木课表 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-tumu
+          path: app/build/outputs/apk/tumu/debug/app-tumu-debug.apk
